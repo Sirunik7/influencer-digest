@@ -10,7 +10,7 @@ import sys
 import time
 import urllib.error
 import urllib.request
-from datetime import datetime
+from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
 # ================= НАСТРОЙКИ =================
@@ -18,6 +18,9 @@ from zoneinfo import ZoneInfo
 HANDLES = ["elonmusk"]
 
 TIMEZONE = "Asia/Yerevan"          # "сегодня" считаем по ереванскому времени
+# За сколько последних часов брать посты.
+# None = строго "только сегодня" (с 00:00 по Еревану), как в требованиях задания.
+HOURS_BACK = None
 MAX_ITEMS_PER_HANDLE = 50          # сколько твитов максимум брать на одного человека
 ACTOR_ID = "xquik~x-tweet-scraper" # скрапер в Apify
 EXCERPT_LIMIT = 700                # длина отрывка текста в сообщении
@@ -28,7 +31,12 @@ BOT_TOKEN = os.environ["TELEGRAM_BOT_TOKEN"]
 CHANNEL = os.environ["TELEGRAM_CHANNEL"]
 
 TZ = ZoneInfo(TIMEZONE)
-TODAY = datetime.now(TZ).date()
+NOW = datetime.now(TZ)
+TODAY = NOW.date()
+if HOURS_BACK:
+    START = NOW - timedelta(hours=HOURS_BACK)
+else:
+    START = datetime.combine(TODAY, datetime.min.time(), tzinfo=TZ)
 
 
 def post_json(url, payload, headers=None, timeout=300):
@@ -44,13 +52,12 @@ def post_json(url, payload, headers=None, timeout=300):
 def fetch_tweets(handle):
     """Запускает скрапер в Apify и возвращает список твитов."""
     url = f"https://api.apify.com/v2/acts/{ACTOR_ID}/run-sync-get-dataset-items"
-    # начало сегодняшнего дня по Еревану, в формате unix-времени
-    midnight = datetime.combine(TODAY, datetime.min.time(), tzinfo=TZ)
-    since_ts = int(midnight.timestamp())
     payload = {
-        "searchTerms": [f"from:{handle} since_time:{since_ts} -filter:retweets"],
+        "twitterHandles": [handle],
+        "queryType": "Latest",
+        "since_time": int(START.timestamp()),
         "maxItems": MAX_ITEMS_PER_HANDLE,
-        "sort": "Latest",
+        "maxItemsPerTarget": MAX_ITEMS_PER_HANDLE,
     }
     items = post_json(url, payload, headers={"Authorization": f"Bearer {APIFY_TOKEN}"})
     return items if isinstance(items, list) else []
@@ -115,9 +122,10 @@ def to_post(item, handle):
 
 
 def is_today(post):
+    """Пост попадает в нужный период (последние HOURS_BACK часов или сегодня)."""
     if not post["created"]:
         return False
-    return post["created"].astimezone(TZ).date() == TODAY
+    return START <= post["created"].astimezone(TZ) <= NOW
 
 
 def send_telegram(text):
@@ -137,7 +145,7 @@ def format_post(post):
     text = post["text"]
     if len(text) > EXCERPT_LIMIT:
         text = text[:EXCERPT_LIMIT].rstrip() + "…"
-    time_str = post["created"].astimezone(TZ).strftime("%H:%M")
+    time_str = post["created"].astimezone(TZ).strftime("%d.%m %H:%M")
     return (
         f"👤 <b>{html.escape(post['name'])}</b> (@{html.escape(post['username'])}) · {time_str}\n\n"
         f"{html.escape(text)}\n\n"
@@ -146,7 +154,7 @@ def format_post(post):
 
 
 def main():
-    print(f"Today ({TIMEZONE}): {TODAY}")
+    print(f"Now ({TIMEZONE}): {NOW:%Y-%m-%d %H:%M}, taking posts since {START:%Y-%m-%d %H:%M}")
     posts, seen, failed = [], set(), 0
 
     for handle in HANDLES:
@@ -177,7 +185,7 @@ def main():
         sys.exit(1)
 
     if not posts:
-        send_telegram(f"📭 No new posts today ({TODAY.strftime('%d.%m.%Y')})")
+        send_telegram(f"📭 No new posts ({START:%d.%m %H:%M} – {NOW:%d.%m %H:%M})")
         print("No new posts today — sent short message.")
         return
 
