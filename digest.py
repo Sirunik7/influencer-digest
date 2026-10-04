@@ -55,7 +55,6 @@ def fetch_tweets(handle):
     payload = {
         "twitterHandles": [handle],
         "queryType": "Latest",
-        "since_time": int(START.timestamp()),
         "maxItems": MAX_ITEMS_PER_HANDLE,
         "maxItemsPerTarget": MAX_ITEMS_PER_HANDLE,
     }
@@ -160,6 +159,11 @@ def main():
     for handle in HANDLES:
         try:
             items = fetch_tweets(handle)
+        except urllib.error.HTTPError as err:
+            failed += 1
+            body = err.read().decode("utf-8", "replace")[:500]
+            print(f"[{handle}] ERROR while fetching: {err} | {body}")
+            continue
         except (urllib.error.URLError, TimeoutError, ValueError) as err:
             failed += 1
             print(f"[{handle}] ERROR while fetching: {err}")
