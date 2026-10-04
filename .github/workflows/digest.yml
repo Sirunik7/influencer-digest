@@ -1,0 +1,27 @@
+name: Daily Influencer Digest
+
+on:
+  schedule:
+    # Каждый день в 21:52 по Еревану (17:52 UTC)
+    - cron: "52 17 * * *"
+  workflow_dispatch: # кнопка "Run workflow" для ручного теста
+
+jobs:
+  digest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Run digest
+        env:
+          APIFY_TOKEN: ${{ secrets.APIFY_TOKEN }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHANNEL: ${{ secrets.TELEGRAM_CHANNEL }}
+        run: python digest.py
