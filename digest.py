@@ -20,7 +20,7 @@ HANDLES = ["elonmusk"]
 TIMEZONE = "Asia/Yerevan"          # "сегодня" считаем по ереванскому времени
 # За сколько последних часов брать посты.
 # None = строго "только сегодня" (с 00:00 по Еревану), как в требованиях задания.
-HOURS_BACK = 12
+HOURS_BACK = None
 MAX_ITEMS_PER_HANDLE = 50          # сколько твитов максимум брать на одного человека
 ACTOR_ID = "xquik~x-tweet-scraper" # скрапер в Apify
 EXCERPT_LIMIT = 700                # длина отрывка текста в сообщении
