@@ -10,7 +10,7 @@ import sys
 import time
 import urllib.error
 import urllib.request
-from datetime import datetime, timedelta
+from datetime import datetime
 from zoneinfo import ZoneInfo
 
 # ================= НАСТРОЙКИ =================
@@ -18,7 +18,7 @@ from zoneinfo import ZoneInfo
 HANDLES = ["elonmusk"]
 
 TIMEZONE = "Asia/Yerevan"          # "сегодня" считаем по ереванскому времени
-MAX_ITEMS_PER_HANDLE = 20          # сколько твитов максимум брать на одного человека
+MAX_ITEMS_PER_HANDLE = 50          # сколько твитов максимум брать на одного человека
 ACTOR_ID = "xquik~x-tweet-scraper" # скрапер в Apify
 EXCERPT_LIMIT = 700                # длина отрывка текста в сообщении
 # =============================================
@@ -44,9 +44,11 @@ def post_json(url, payload, headers=None, timeout=300):
 def fetch_tweets(handle):
     """Запускает скрапер в Apify и возвращает список твитов."""
     url = f"https://api.apify.com/v2/acts/{ACTOR_ID}/run-sync-get-dataset-items"
-    since = (TODAY - timedelta(days=1)).isoformat()  # с запасом, точный фильтр ниже
+    # начало сегодняшнего дня по Еревану, в формате unix-времени
+    midnight = datetime.combine(TODAY, datetime.min.time(), tzinfo=TZ)
+    since_ts = int(midnight.timestamp())
     payload = {
-        "searchTerms": [f"from:{handle} since:{since} -filter:retweets"],
+        "searchTerms": [f"from:{handle} since_time:{since_ts} -filter:retweets"],
         "maxItems": MAX_ITEMS_PER_HANDLE,
         "sort": "Latest",
     }
@@ -65,6 +67,9 @@ def first(item, *keys):
 def parse_date(value):
     if not value:
         return None
+    if isinstance(value, (int, float)):  # unix-время (секунды или миллисекунды)
+        ts = value / 1000 if value > 10**11 else value
+        return datetime.fromtimestamp(ts, tz=ZoneInfo("UTC"))
     try:
         return datetime.strptime(value, "%a %b %d %H:%M:%S %z %Y")  # формат X
     except ValueError:
@@ -78,7 +83,7 @@ def parse_date(value):
 def to_post(item, handle):
     """Достаёт из ответа скрапера нужные поля."""
     text = first(item, "text", "fullText", "full_text") or ""
-    created = parse_date(first(item, "createdAt", "created_at", "date"))
+    created = parse_date(first(item, "createdAt", "created_at", "date", "postedAt", "timestamp"))
 
     author = item.get("author") or {}
     if isinstance(author, str):
@@ -151,6 +156,11 @@ def main():
             failed += 1
             print(f"[{handle}] ERROR while fetching: {err}")
             continue
+
+        # для отладки: покажем даты первых 3 твитов
+        for item in items[:3]:
+            p = to_post(item, handle)
+            print(f"  sample: created={p['created']} rt={p['is_retweet']} text={p['text'][:60]!r}")
 
         kept = 0
         for item in items:
